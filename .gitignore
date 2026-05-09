@@ -1,0 +1,28 @@
+node_modules/
+.env
+.env.local
+
+# Reviewer working files
+bugs.json
+results.json
+/tmp/*.json
+
+# Logs
+*.log
+
+# Playwright
+.playwright-output/
+.playwright-mcp/
+
+# Screenshots — except docs assets
+*.png
+!docs/*.png
+
+# Figma MCP server
+figma-mcp-server/venv/
+figma-mcp-server/__pycache__/
+figma-mcp-server/.figma_cache/
+
+# OS
+.DS_Store
+Thumbs.db

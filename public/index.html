@@ -1,0 +1,1264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bug Reviewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0e0e0e;
+    --surface: #161616;
+    --surface2: #1c1c1c;
+    --surface3: #222;
+    --border: #2a2a2a;
+    --text: #e2e2e2;
+    --text-soft: #b8b8b8;
+    --muted: #7a7a7a;
+    --muted2: #555;
+    --accent: #3b82f6;
+
+    --problem-bg: #241a10;
+    --problem-fg: #f0b866;
+    --fix-bg: #13201a;
+    --fix-fg: #7fd59a;
+
+    --diff-red-bg: rgba(239, 68, 68, 0.12);
+    --diff-red-gutter: rgba(239, 68, 68, 0.25);
+    --diff-red-fg: #f87171;
+    --diff-green-bg: rgba(34, 197, 94, 0.12);
+    --diff-green-gutter: rgba(34, 197, 94, 0.28);
+    --diff-green-fg: #4ade80;
+    --diff-empty-bg: rgba(255,255,255,0.02);
+
+    --approve: #22c55e;
+    --decline: #ef4444;
+    --feedback: #f1c948;
+
+    --sans: 'Inter', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  .connecting {
+    position: fixed; inset: 0;
+    background: var(--bg);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 13px;
+    z-index: 100; transition: opacity 0.3s;
+  }
+  .connecting.hidden { opacity: 0; pointer-events: none; }
+
+  .flash {
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 50;
+    opacity: 0; transition: opacity 0.08s;
+  }
+  .flash.approve-flash { background: rgba(34, 197, 94, 0.06); }
+  .flash.decline-flash { background: rgba(239, 68, 68, 0.06); }
+  .flash.show { opacity: 1; }
+
+  /* ── Full-window app shell ── */
+  .app {
+    height: 100vh;
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  .app-head {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 16px;
+    align-items: center;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .bug-meta {
+    display: flex; align-items: center; gap: 10px;
+    min-width: 0;
+  }
+  .bug-badge {
+    font-family: var(--mono);
+    font-size: 10px; letter-spacing: 0.08em;
+    padding: 3px 8px;
+    background: var(--surface3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-soft);
+    flex-shrink: 0;
+  }
+  .bug-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .decision-badge {
+    flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 10px; letter-spacing: 0.06em;
+    padding: 2px 7px;
+    border-radius: 3px;
+    display: none;
+  }
+  .decision-badge.approved { display: inline; background: rgba(34,197,94,0.15); color: var(--approve); }
+  .decision-badge.declined { display: inline; background: rgba(239,68,68,0.15); color: var(--decline); }
+  .decision-badge.feedback { display: inline; background: rgba(241,201,72,0.12); color: var(--feedback); }
+
+  /* Queue pill */
+  .queue {
+    justify-self: center;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    padding: 4px 6px 4px 10px;
+  }
+  .queue .count {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.05em;
+    padding-right: 8px;
+    border-right: 1px solid var(--border);
+  }
+  .queue .strip {
+    display: flex; gap: 4px; align-items: center;
+    max-width: 280px; overflow: hidden;
+  }
+  .queue .dot {
+    width: 7px; height: 7px;
+    border-radius: 99px;
+    background: var(--muted2);
+    cursor: pointer;
+    transition: transform 0.1s;
+    flex-shrink: 0;
+  }
+  .queue .dot:hover { transform: scale(1.4); }
+  .queue .dot.approved { background: var(--approve); }
+  .queue .dot.declined { background: var(--decline); }
+  .queue .dot.feedback { background: var(--feedback); }
+  .queue .dot.active {
+    width: 9px; height: 9px;
+    background: var(--text);
+    box-shadow: 0 0 0 2px var(--surface2), 0 0 0 3px var(--text);
+  }
+  .queue .navs {
+    display: flex; gap: 0;
+    margin-left: 4px;
+    padding-left: 4px;
+    border-left: 1px solid var(--border);
+  }
+  .queue .navs button {
+    width: 22px; height: 22px;
+    border: none;
+    background: transparent;
+    color: var(--text-soft);
+    font-family: var(--mono);
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 3px;
+    line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .queue .navs button:hover:not(:disabled) { background: var(--surface3); color: var(--text); }
+  .queue .navs button:disabled { opacity: 0.25; cursor: default; }
+
+  /* Header actions */
+  .actions {
+    display: flex; gap: 6px; align-items: center;
+  }
+  .actions button {
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 5px;
+    font-family: var(--sans);
+    font-weight: 600;
+    font-size: 12px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    background: var(--surface2);
+    color: var(--text);
+    display: flex; align-items: center; gap: 6px;
+    transition: opacity 0.15s, background 0.1s;
+  }
+  .actions button:disabled { opacity: 0.3; cursor: default; }
+  .actions button kbd {
+    display: inline-block;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    font-size: 10px;
+    font-family: var(--mono);
+    font-weight: 500;
+    color: var(--text-soft);
+  }
+  .actions button.approve {
+    background: var(--approve);
+    border-color: var(--approve);
+    color: #0e1a12;
+  }
+  .actions button.approve kbd {
+    background: rgba(0,0,0,0.2);
+    border-color: rgba(0,0,0,0.25);
+    color: rgba(0,0,0,0.8);
+  }
+  .actions button.decline {
+    background: transparent;
+    border-color: var(--decline);
+    color: var(--decline);
+  }
+  .actions button.decline kbd {
+    background: rgba(239,68,68,0.1);
+    border-color: rgba(239,68,68,0.3);
+    color: var(--decline);
+  }
+  .actions button.submit-all {
+    background: transparent;
+    border-color: var(--muted2);
+    color: var(--muted);
+  }
+  .actions button.submit-all:not(:disabled) {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .actions .sep {
+    width: 1px; height: 18px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  /* ── Summary row ── */
+  .summaries {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .summaries.hidden { display: none; }
+  .summary-col { padding: 8px 16px; }
+  .summary-col + .summary-col { border-left: 1px solid var(--border); }
+  .summary-col .lbl {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+    display: block;
+  }
+  .summary-col.problem { background: var(--problem-bg); }
+  .summary-col.problem .lbl { color: var(--problem-fg); }
+  .summary-col.fix { background: var(--fix-bg); }
+  .summary-col.fix .lbl { color: var(--fix-fg); }
+  .summary-col .body { color: var(--text-soft); }
+  .summary-col .body code {
+    font-family: var(--mono); font-size: 11px;
+    padding: 0 4px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 3px;
+    color: var(--text);
+  }
+  .summary-col .body .empty { color: var(--muted); font-style: italic; }
+
+  /* ── Main body ── */
+  .main {
+    display: grid;
+    grid-template-rows: 1fr auto;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .diff-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .diff-pane {
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+  }
+  .diff-pane + .diff-pane { border-left: 1px solid var(--border); }
+  .diff-pane-lbl {
+    font-family: var(--mono);
+    font-size: 9px; letter-spacing: 0.15em;
+    padding: 6px 14px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .diff-pane.before .diff-pane-lbl { color: var(--problem-fg); }
+  .diff-pane.after  .diff-pane-lbl { color: var(--fix-fg); }
+  .diff-pane-lbl .meta {
+    color: var(--muted);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: none;
+  }
+
+  .shot-wrap {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 12px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    background-image:
+      linear-gradient(45deg, #1a1a1a 25%, transparent 25%),
+      linear-gradient(-45deg, #1a1a1a 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1a1a1a 75%),
+      linear-gradient(-45deg, transparent 75%, #1a1a1a 75%);
+    background-size: 18px 18px;
+    background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+    background-color: var(--surface2);
+    position: relative;
+  }
+  .shot-wrap img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    background: #2a2a2a;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .shot-wrap .empty-shot {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 40px;
+  }
+  .shot-wrap .expand-btn {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #ccc;
+    border-radius: 5px;
+    width: 28px; height: 28px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 10;
+  }
+  .shot-wrap:hover .expand-btn { opacity: 1; }
+  .shot-wrap .expand-btn:hover { background: rgba(0,0,0,0.85); color: #fff; }
+
+  /* ADO column */
+  .main.with-ado .diff-row {
+    grid-template-columns: 200px 1fr 1fr;
+  }
+  .ado-pane {
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+    min-height: 0;
+  }
+  .main.with-ado .ado-pane { display: flex; }
+  .ado-pane .diff-pane-lbl { color: #a78bfa; }
+  .ado-stack {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex; flex-direction: column;
+    gap: 8px;
+    background: var(--surface2);
+  }
+  .ado-stack img {
+    width: 100%;
+    height: auto;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    cursor: zoom-in;
+    display: block;
+  }
+
+  /* ── Code diff (unified) ── */
+  .code-diff {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    max-height: 280px;
+    display: flex; flex-direction: column;
+  }
+  .code-diff.hidden { display: none; }
+  .code-diff-head {
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+    display: flex; align-items: center; justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .code-diff-head .path { font-size: 11px; color: var(--text-soft); }
+  .code-diff-head .hunk { font-size: 10px; color: var(--muted); margin-left: 12px; }
+  .code-diff-head .left { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+  .code-diff-head .left > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .code-diff-head .tabs { display: flex; gap: 4px; flex-shrink: 0; }
+  .code-diff-head .tabs span {
+    font-size: 10px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--muted);
+    background: transparent;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.1s, color 0.1s;
+  }
+  .code-diff-head .tabs span:hover { color: var(--text-soft); }
+  .code-diff-head .tabs span.active {
+    background: var(--text); color: var(--bg);
+    border-color: var(--text);
+  }
+
+  /* Unified diff body */
+  .code-diff-body { padding: 4px 0; overflow-y: auto; flex: 1; }
+  .code-diff-body.hidden { display: none; }
+  .code-diff-body .line {
+    display: grid;
+    grid-template-columns: 34px 34px 12px 1fr;
+    align-items: baseline;
+    padding: 0 14px;
+  }
+  .code-diff-body .ln {
+    color: var(--muted2);
+    text-align: right;
+    padding-right: 8px;
+    user-select: none;
+    font-size: 10.5px;
+  }
+  .code-diff-body .sign { text-align: center; font-weight: 600; user-select: none; }
+  .code-diff-body .content { white-space: pre; color: var(--text-soft); }
+  .code-diff-body .line.ctx .content { color: var(--muted); }
+  .code-diff-body .line.del { background: var(--diff-red-bg); }
+  .code-diff-body .line.del .ln { background: var(--diff-red-gutter); color: var(--diff-red-fg); }
+  .code-diff-body .line.del .sign,
+  .code-diff-body .line.del .content { color: var(--diff-red-fg); }
+  .code-diff-body .line.add { background: var(--diff-green-bg); }
+  .code-diff-body .line.add .ln { background: var(--diff-green-gutter); color: var(--diff-green-fg); }
+  .code-diff-body .line.add .sign,
+  .code-diff-body .line.add .content { color: var(--diff-green-fg); }
+  .code-diff-body .hunk-sep {
+    padding: 2px 14px;
+    color: var(--muted);
+    background: var(--surface3);
+    font-size: 10px;
+    border-top: 1px dashed var(--border);
+    border-bottom: 1px dashed var(--border);
+  }
+
+  /* Split diff body */
+  .split-diff { display: none; flex: 1; overflow: hidden; min-height: 0; }
+  .split-diff.visible { display: grid; grid-template-columns: 1fr 1fr; }
+  .split-side {
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .split-side + .split-side { border-left: 1px solid var(--border); }
+  .split-line {
+    display: grid;
+    grid-template-columns: 34px 12px 1fr;
+    align-items: baseline;
+    padding: 0 14px;
+  }
+  .split-line .ln {
+    color: var(--muted2);
+    text-align: right;
+    padding-right: 8px;
+    user-select: none;
+    font-size: 10.5px;
+  }
+  .split-line .sign { text-align: center; font-weight: 600; user-select: none; font-size: 12px; }
+  .split-line .content { white-space: pre; color: var(--muted); font-size: 12px; line-height: 1.6; }
+  .split-line.del { background: var(--diff-red-bg); }
+  .split-line.del .ln { background: var(--diff-red-gutter); color: var(--diff-red-fg); }
+  .split-line.del .sign,
+  .split-line.del .content { color: var(--diff-red-fg); }
+  .split-line.add { background: var(--diff-green-bg); }
+  .split-line.add .ln { background: var(--diff-green-gutter); color: var(--diff-green-fg); }
+  .split-line.add .sign,
+  .split-line.add .content { color: var(--diff-green-fg); }
+  .split-line.empty { background: var(--diff-empty-bg); min-height: 24px; }
+  .split-line.hunk-sep {
+    grid-column: 1 / -1;
+    padding: 2px 14px;
+    color: var(--muted);
+    background: var(--surface3);
+    font-size: 10px; font-family: var(--mono);
+    border-top: 1px dashed var(--border);
+    border-bottom: 1px dashed var(--border);
+  }
+
+  /* Style fallback */
+  .style-fallback {
+    padding: 8px 14px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    max-height: 160px;
+    overflow-y: auto;
+  }
+  .style-fallback.hidden { display: none; }
+  .style-fallback h6 {
+    font-size: 9px; letter-spacing: 0.15em;
+    color: var(--muted); text-transform: uppercase;
+    margin-bottom: 4px; font-weight: 700;
+  }
+  .style-fallback .row {
+    display: grid;
+    grid-template-columns: 150px 1fr auto 1fr;
+    gap: 8px;
+    padding: 2px 0;
+    align-items: center;
+  }
+  .style-fallback .row .k { color: var(--muted); }
+  .style-fallback .row .bad { color: var(--diff-red-fg); }
+  .style-fallback .row .good { color: var(--diff-green-fg); }
+  .style-fallback .row .ar { color: var(--muted); }
+
+  /* ── Footer ── */
+  .app-foot {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+  }
+
+  .feedback-input {
+    width: 100%;
+    height: 32px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 12px;
+    padding: 0 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .feedback-input:focus { border-color: #3a3a3a; }
+  .feedback-input::placeholder { color: var(--muted); }
+
+  .refs {
+    display: flex; gap: 6px; align-items: center;
+    font-family: var(--mono);
+    font-size: 9px; letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .refs.hidden { display: none; }
+  .refs .lbl { padding-right: 2px; }
+  .refs .thumb {
+    width: 36px; height: 28px;
+    background-image: repeating-linear-gradient(
+      135deg, #2a2a2a, #2a2a2a 6px, #303030 6px, #303030 12px);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    cursor: zoom-in;
+    transition: border-color 0.15s;
+    object-fit: cover;
+  }
+  .refs .thumb:hover { border-color: #555; }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.92);
+    z-index: 300;
+    display: flex; align-items: center; justify-content: center;
+    padding: 32px;
+    cursor: zoom-out;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease;
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+  .modal-img {
+    max-width: 100%; max-height: 100%;
+    border-radius: 4px;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+    cursor: default; display: block;
+  }
+  .modal-close {
+    position: fixed;
+    top: 16px; right: 20px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #ccc;
+    font-size: 18px;
+    width: 32px; height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ── Done screen ── */
+  .done-screen {
+    display: none;
+    flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 10px;
+    padding: 60px;
+    height: 100%;
+  }
+  .done-screen.visible { display: flex; }
+  .done-icon { font-size: 36px; color: var(--approve); }
+  .done-title { font-size: 18px; font-weight: 600; }
+  .done-sub { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="connecting" id="connecting">Connecting…</div>
+<div class="flash" id="flash"></div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <button class="modal-close" id="modal-close">✕</button>
+  <img class="modal-img" id="modal-img" src="" alt="Full size screenshot" />
+</div>
+
+<div class="app" id="app" style="display:none">
+
+  <!-- HEADER -->
+  <header class="app-head">
+    <div class="bug-meta">
+      <span class="bug-badge" id="bug-id">—</span>
+      <span class="bug-title" id="bug-title">—</span>
+      <span class="decision-badge" id="decision-badge"></span>
+    </div>
+
+    <div class="queue" id="queue">
+      <span class="count" id="queue-count">– / –</span>
+      <div class="strip" id="queue-strip"></div>
+      <div class="navs">
+        <button id="queue-prev" title="Previous (←)" disabled>‹</button>
+        <button id="queue-next" title="Next (→)" disabled>›</button>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="approve" id="btn-approve">Approve<kbd>1</kbd></button>
+      <button class="decline" id="btn-decline">Decline<kbd>2</kbd></button>
+      <div class="sep"></div>
+      <button class="submit-all" id="btn-submit" disabled title="Submit when all bugs are reviewed">Submit all</button>
+    </div>
+  </header>
+
+  <!-- PROBLEM / FIX SUMMARY -->
+  <section class="summaries" id="summaries">
+    <div class="summary-col problem">
+      <span class="lbl">Problem · from ADO</span>
+      <div class="body" id="problem-body"><span class="empty">No problem summary provided.</span></div>
+    </div>
+    <div class="summary-col fix">
+      <span class="lbl">Fix · what changed</span>
+      <div class="body" id="fix-body"><span class="empty">No fix summary provided.</span></div>
+    </div>
+  </section>
+
+  <!-- MAIN DIFF AREA -->
+  <main class="main" id="main">
+    <div class="diff-row">
+
+      <!-- ADO pane (left column, shown when no code diff) -->
+      <div class="ado-pane" id="ado-pane">
+        <div class="diff-pane-lbl">ADO · reference <span class="meta" id="ado-count"></span></div>
+        <div class="ado-stack" id="ado-stack"></div>
+      </div>
+
+      <div class="diff-pane before">
+        <div class="diff-pane-lbl">Current · before fix <span class="meta">click to expand</span></div>
+        <div class="shot-wrap" id="current-wrap">
+          <div class="empty-shot" id="current-empty">No screenshot</div>
+          <img id="current-img" src="" alt="Current" style="display:none" />
+          <button class="expand-btn" id="current-expand" title="Expand" style="display:none">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="diff-pane after">
+        <div class="diff-pane-lbl">Fixed · after fix <span class="meta">click to expand</span></div>
+        <div class="shot-wrap" id="fixed-wrap">
+          <div class="empty-shot" id="fixed-empty">No screenshot</div>
+          <img id="fixed-img" src="" alt="Fixed" style="display:none" />
+          <button class="expand-btn" id="fixed-expand" title="Expand" style="display:none">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CODE DIFF -->
+    <div class="code-diff hidden" id="code-diff">
+      <div class="code-diff-head">
+        <div class="left">
+          <span class="path" id="code-diff-path">—</span>
+          <span class="hunk" id="code-diff-hunk"></span>
+        </div>
+        <div class="tabs" id="diff-tabs">
+          <span data-mode="unified" class="active">Unified</span>
+          <span data-mode="split">Split</span>
+        </div>
+      </div>
+      <!-- Unified body -->
+      <div class="code-diff-body" id="code-diff-body"></div>
+      <!-- Split body -->
+      <div class="split-diff" id="split-diff">
+        <div class="split-side" id="split-left"></div>
+        <div class="split-side" id="split-right"></div>
+      </div>
+    </div>
+
+    <!-- STYLE FALLBACK -->
+    <div class="style-fallback hidden" id="style-fallback">
+      <h6 id="style-fallback-title">Style diff</h6>
+      <div id="style-fallback-body"></div>
+    </div>
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="app-foot">
+    <input
+      class="feedback-input"
+      id="feedback-input"
+      type="text"
+      placeholder="type feedback + ↵  ·  1 approve  ·  2 decline  ·  ← → navigate"
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <div class="refs hidden" id="refs">
+      <span class="lbl">ADO refs</span>
+      <div id="refs-thumbs" style="display:flex;gap:6px;"></div>
+    </div>
+  </footer>
+
+  <div class="done-screen" id="done-screen"></div>
+
+</div>
+
+<script>
+  const $ = id => document.getElementById(id)
+
+  const ws = new WebSocket(`ws://localhost:${location.port}`)
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  let bugs = []
+  let decisions = {}   // bugId → { status, feedback? }
+  let currentIndex = 0
+  let totalBugs = 0
+  let diffMode = 'unified'
+  let currentDiff = null
+
+  // ── WebSocket ──────────────────────────────────────────────────────────────
+  ws.addEventListener('open', () => {
+    $('connecting').classList.add('hidden')
+    $('app').style.display = 'grid'
+  })
+
+  ws.addEventListener('message', e => {
+    const msg = JSON.parse(e.data)
+    if (msg.type === 'init') {
+      bugs = msg.bugs
+      totalBugs = msg.total
+      currentIndex = 0
+      renderBug(0)
+    } else if (msg.type === 'done') {
+      showDone(msg.total)
+    }
+  })
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  function navigateTo(index) {
+    if (index < 0 || index >= totalBugs) return
+    currentIndex = index
+    renderBug(index)
+  }
+
+  $('queue-prev').addEventListener('click', () => navigateTo(currentIndex - 1))
+  $('queue-next').addEventListener('click', () => navigateTo(currentIndex + 1))
+
+  // ── Bug rendering ──────────────────────────────────────────────────────────
+  function renderBug(index) {
+    const bug = bugs[index]
+    if (!bug) return
+
+    // Header
+    $('bug-id').textContent = `#${bug.id}`
+    $('bug-title').textContent = bug.title || ''
+
+    // Decision badge
+    const existing = decisions[bug.id]
+    const badge = $('decision-badge')
+    badge.className = 'decision-badge'
+    if (existing) {
+      badge.classList.add(existing.status)
+      badge.textContent = existing.status === 'approved' ? '✓ approved'
+        : existing.status === 'declined' ? '✗ declined'
+        : `↩ feedback`
+    }
+
+    // Queue
+    renderQueue()
+
+    // Summaries
+    const problem = bug.problem || textFromHtml(bug.description) || ''
+    const fix = bug.fix || ''
+    renderSummaryBody($('problem-body'), problem)
+    renderSummaryBody($('fix-body'), fix)
+
+    // Screenshots
+    setScreenshot('current-img', 'current-empty', 'current-expand', bug.currentScreenshot)
+    setScreenshot('fixed-img', 'fixed-empty', 'fixed-expand', bug.fixedScreenshot)
+
+    // Code diff / style fallback
+    const codeDiff = bug.codeDiff
+    const hasCodeDiff = codeDiff && Array.isArray(codeDiff.lines) && codeDiff.lines.length > 0
+    const hasStyles = bug.currentStyles || bug.fixedStyles
+
+    if (hasCodeDiff) {
+      $('code-diff').classList.remove('hidden')
+      $('style-fallback').classList.add('hidden')
+      currentDiff = codeDiff
+      renderCodeDiff(codeDiff, diffMode)
+    } else if (hasStyles) {
+      $('code-diff').classList.add('hidden')
+      $('style-fallback').classList.remove('hidden')
+      renderStyleFallback(bug.currentStyles || {}, bug.fixedStyles || {})
+    } else {
+      $('code-diff').classList.add('hidden')
+      $('style-fallback').classList.add('hidden')
+    }
+
+    // ADO pane + footer refs
+    const shots = bug.adoScreenshots || []
+    renderAdoRefs(shots, hasCodeDiff)
+
+    // Pre-fill feedback if previously reviewed with feedback
+    const input = $('feedback-input')
+    input.value = existing?.feedback || ''
+    input.focus()
+  }
+
+  function setScreenshot(imgId, emptyId, expandId, path) {
+    if (path) {
+      $(imgId).src = `/screenshot?path=${encodeURIComponent(path)}`
+      $(imgId).style.display = 'block'
+      $(emptyId).style.display = 'none'
+      $(expandId).style.display = 'flex'
+    } else {
+      $(imgId).style.display = 'none'
+      $(emptyId).style.display = 'block'
+      $(expandId).style.display = 'none'
+    }
+  }
+
+  // ── Queue rendering ────────────────────────────────────────────────────────
+  function renderQueue() {
+    $('queue-count').textContent = `${currentIndex + 1} / ${totalBugs}`
+
+    const strip = $('queue-strip')
+    strip.innerHTML = ''
+    for (let i = 0; i < totalBugs; i++) {
+      const bug = bugs[i]
+      const dec = bug ? decisions[bug.id] : null
+      const dot = document.createElement('span')
+      dot.className = 'dot'
+      if (i === currentIndex) dot.classList.add('active')
+      else if (dec?.status === 'approved') dot.classList.add('approved')
+      else if (dec?.status === 'declined') dot.classList.add('declined')
+      else if (dec?.status === 'feedback') dot.classList.add('feedback')
+      if (bug) {
+        dot.title = `#${bug.id} · ${bug.title}`
+        dot.addEventListener('click', () => navigateTo(i))
+      }
+      strip.appendChild(dot)
+    }
+
+    $('queue-prev').disabled = currentIndex === 0
+    $('queue-next').disabled = currentIndex === totalBugs - 1
+
+    // Enable submit when all bugs have decisions
+    const allDone = totalBugs > 0 && bugs.every(b => decisions[b.id])
+    $('btn-submit').disabled = !allDone
+  }
+
+  // ── Submit decision ────────────────────────────────────────────────────────
+  function submitDecision(status, feedback) {
+    const bug = bugs[currentIndex]
+    if (!bug) return
+
+    decisions[bug.id] = { status, feedback: feedback || undefined }
+
+    // Flash
+    const flash = $('flash')
+    flash.className = `flash ${status === 'approved' ? 'approve-flash' : status === 'declined' ? 'decline-flash' : ''} show`
+    setTimeout(() => flash.classList.remove('show'), 180)
+
+    // Update badge immediately
+    const badge = $('decision-badge')
+    badge.className = `decision-badge ${status}`
+    badge.textContent = status === 'approved' ? '✓ approved'
+      : status === 'declined' ? '✗ declined'
+      : '↩ feedback'
+
+    renderQueue()
+
+    // Auto-advance to next undecided
+    const nextUndecided = bugs.findIndex((b, i) => i > currentIndex && !decisions[b.id])
+    if (nextUndecided !== -1) {
+      setTimeout(() => navigateTo(nextUndecided), 120)
+    }
+  }
+
+  // ── Submit all ─────────────────────────────────────────────────────────────
+  function submitAll() {
+    const results = bugs.map(b => ({
+      id: b.id,
+      title: b.title,
+      status: decisions[b.id]?.status || 'approved',
+      ...(decisions[b.id]?.feedback ? { feedback: decisions[b.id].feedback } : {})
+    }))
+    ws.send(JSON.stringify({ type: 'submit', results }))
+  }
+
+  $('btn-approve').addEventListener('click', () => {
+    submitDecision('approved')
+    $('feedback-input').focus()
+  })
+  $('btn-decline').addEventListener('click', () => {
+    submitDecision('declined')
+    $('feedback-input').focus()
+  })
+  $('btn-submit').addEventListener('click', submitAll)
+
+  // ── Keyboard ────────────────────────────────────────────────────────────────
+  // Global handler — works regardless of focus
+  document.addEventListener('keydown', e => {
+    const modal = $('modal-overlay')
+    if (modal.classList.contains('open')) {
+      if (e.key === 'Escape') closeModal()
+      return
+    }
+
+    const input = $('feedback-input')
+    const inputFocused = document.activeElement === input
+    const inputEmpty = input.value === ''
+
+    // Navigation — always works
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !inputFocused) {
+      e.preventDefault()
+      if (e.key === 'ArrowLeft') navigateTo(currentIndex - 1)
+      else navigateTo(currentIndex + 1)
+      return
+    }
+
+    // 1 / 2 — work when input is empty or not focused
+    if (e.key === '1' && inputEmpty) {
+      e.preventDefault()
+      submitDecision('approved')
+      return
+    }
+    if (e.key === '2' && inputEmpty) {
+      e.preventDefault()
+      submitDecision('declined')
+      return
+    }
+
+    // Enter — submit feedback or approve
+    if (e.key === 'Enter' && inputFocused) {
+      e.preventDefault()
+      const val = input.value.trim()
+      submitDecision(val ? 'feedback' : 'approved', val || undefined)
+      input.value = ''
+      return
+    }
+
+    // Any printable char (not a modifier shortcut) → focus input
+    if (!inputFocused && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey
+        && e.key !== '1' && e.key !== '2') {
+      input.focus()
+    }
+  })
+
+  // ── Diff tabs ───────────────────────────────────────────────────────────────
+  $('diff-tabs').addEventListener('click', e => {
+    const tab = e.target.closest('[data-mode]')
+    if (!tab) return
+    diffMode = tab.dataset.mode
+    $('diff-tabs').querySelectorAll('[data-mode]').forEach(t => {
+      t.classList.toggle('active', t.dataset.mode === diffMode)
+    })
+    if (currentDiff) renderCodeDiff(currentDiff, diffMode)
+  })
+
+  // Sync split pane scroll
+  const splitLeft = $('split-left')
+  const splitRight = $('split-right')
+  let syncingScroll = false
+  function syncScroll(source, target) {
+    return () => {
+      if (syncingScroll) return
+      syncingScroll = true
+      target.scrollTop = source.scrollTop
+      syncingScroll = false
+    }
+  }
+  splitLeft.addEventListener('scroll', syncScroll(splitLeft, splitRight))
+  splitRight.addEventListener('scroll', syncScroll(splitRight, splitLeft))
+
+  // ── Diff rendering ──────────────────────────────────────────────────────────
+  function renderCodeDiff(diff, mode) {
+    $('code-diff-path').textContent = diff.path || ''
+    $('code-diff-hunk').textContent = diff.hunk || ''
+
+    if (mode === 'split') {
+      $('code-diff-body').classList.add('hidden')
+      $('split-diff').classList.add('visible')
+      $('split-diff').classList.remove('hidden')
+      renderSplitDiff(diff)
+    } else {
+      $('code-diff-body').classList.remove('hidden')
+      $('split-diff').classList.remove('visible')
+      renderUnifiedDiff(diff)
+    }
+  }
+
+  function renderUnifiedDiff(diff) {
+    const body = $('code-diff-body')
+    body.innerHTML = ''
+    diff.lines.forEach(line => {
+      if (line.type === 'hunk') {
+        const sep = document.createElement('div')
+        sep.className = 'hunk-sep'
+        sep.textContent = line.text || ''
+        body.appendChild(sep)
+        return
+      }
+      const row = document.createElement('div')
+      row.className = 'line ' + (line.type || 'ctx')
+      const lnOld = document.createElement('span'); lnOld.className = 'ln'; lnOld.textContent = line.oldNo != null ? line.oldNo : ''
+      const lnNew = document.createElement('span'); lnNew.className = 'ln'; lnNew.textContent = line.newNo != null ? line.newNo : ''
+      const sign  = document.createElement('span'); sign.className = 'sign'
+      sign.textContent = line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' '
+      const content = document.createElement('span'); content.className = 'content'
+      content.textContent = line.content != null ? line.content : ''
+      row.append(lnOld, lnNew, sign, content)
+      body.appendChild(row)
+    })
+  }
+
+  function renderSplitDiff(diff) {
+    const leftEl = $('split-left')
+    const rightEl = $('split-right')
+    leftEl.innerHTML = ''
+    rightEl.innerHTML = ''
+
+    const rows = buildSplitRows(diff.lines)
+
+    rows.forEach(row => {
+      if (row.type === 'hunk') {
+        leftEl.appendChild(makeSplitHunkSep(row.text))
+        rightEl.appendChild(makeSplitHunkSep(row.text))
+        return
+      }
+      leftEl.appendChild(makeSplitLine(row.left, 'del'))
+      rightEl.appendChild(makeSplitLine(row.right, 'add'))
+    })
+  }
+
+  function buildSplitRows(lines) {
+    const rows = []
+    let i = 0
+    while (i < lines.length) {
+      const line = lines[i]
+      if (line.type === 'hunk') {
+        rows.push({ type: 'hunk', text: line.text || '' })
+        i++
+      } else if (line.type === 'ctx') {
+        rows.push({ left: line, right: line })
+        i++
+      } else {
+        // Collect a del/add block
+        const dels = [], adds = []
+        while (i < lines.length && (lines[i].type === 'del' || lines[i].type === 'add')) {
+          if (lines[i].type === 'del') dels.push(lines[i])
+          else adds.push(lines[i])
+          i++
+        }
+        const len = Math.max(dels.length, adds.length)
+        for (let j = 0; j < len; j++) {
+          rows.push({ left: dels[j] || null, right: adds[j] || null })
+        }
+      }
+    }
+    return rows
+  }
+
+  function makeSplitLine(lineData, side) {
+    if (!lineData) {
+      const el = document.createElement('div')
+      el.className = 'split-line empty'
+      return el
+    }
+    const el = document.createElement('div')
+    el.className = `split-line ${lineData.type || 'ctx'}`
+    const ln = document.createElement('span'); ln.className = 'ln'
+    ln.textContent = (side === 'del' ? lineData.oldNo : lineData.newNo) ?? ''
+    const sign = document.createElement('span'); sign.className = 'sign'
+    sign.textContent = lineData.type === 'del' ? '-' : lineData.type === 'add' ? '+' : ' '
+    const content = document.createElement('span'); content.className = 'content'
+    content.textContent = lineData.content ?? ''
+    el.append(ln, sign, content)
+    return el
+  }
+
+  function makeSplitHunkSep(text) {
+    const el = document.createElement('div')
+    el.className = 'split-line hunk-sep'
+    el.textContent = text
+    return el
+  }
+
+  // ── Style fallback ──────────────────────────────────────────────────────────
+  function renderStyleFallback(current, fixed) {
+    const keys = new Set([...Object.keys(current), ...Object.keys(fixed)])
+    const body = $('style-fallback-body')
+    body.innerHTML = ''
+    let diffs = 0
+    keys.forEach(k => {
+      const c = current[k], f = fixed[k]
+      if (c === f) return
+      diffs++
+      const row = document.createElement('div')
+      row.className = 'row'
+      row.innerHTML =
+        `<span class="k">${k}</span>` +
+        `<span class="bad">${c != null ? c : '∅'}</span>` +
+        `<span class="ar">→</span>` +
+        `<span class="good">${f != null ? f : '∅'}</span>`
+      body.appendChild(row)
+    })
+    $('style-fallback-title').textContent = `Style diff · ${diffs} ∆`
+  }
+
+  // ── ADO refs ────────────────────────────────────────────────────────────────
+  function renderAdoRefs(paths, hasCodeDiff) {
+    const refs = $('refs')
+    const thumbs = $('refs-thumbs')
+    thumbs.innerHTML = ''
+
+    if (paths.length > 0) {
+      refs.classList.remove('hidden')
+      paths.slice(0, 5).forEach(p => {
+        const img = document.createElement('img')
+        img.className = 'thumb'
+        img.src = `/screenshot?path=${encodeURIComponent(p)}`
+        img.alt = 'ADO ref'
+        img.addEventListener('click', () => openModal(img.src))
+        thumbs.appendChild(img)
+      })
+      if (paths.length > 5) {
+        const more = document.createElement('span')
+        more.style.cssText = 'color:var(--muted);padding-left:4px'
+        more.textContent = `+${paths.length - 5}`
+        thumbs.appendChild(more)
+      }
+    } else {
+      refs.classList.add('hidden')
+    }
+
+    const main = $('main')
+    const adoStack = $('ado-stack')
+    adoStack.innerHTML = ''
+    if (paths.length > 0 && !hasCodeDiff) {
+      main.classList.add('with-ado')
+      $('ado-count').textContent = `${paths.length} shot${paths.length === 1 ? '' : 's'}`
+      paths.forEach(p => {
+        const img = document.createElement('img')
+        img.src = `/screenshot?path=${encodeURIComponent(p)}`
+        img.alt = 'ADO screenshot'
+        img.addEventListener('click', () => openModal(img.src))
+        adoStack.appendChild(img)
+      })
+    } else {
+      main.classList.remove('with-ado')
+    }
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  function textFromHtml(html) {
+    if (!html) return ''
+    const div = document.createElement('div')
+    div.innerHTML = html
+    return (div.textContent || '').trim().replace(/\s+/g, ' ')
+  }
+
+  function renderSummaryBody(el, text) {
+    if (!text || !text.trim()) {
+      el.innerHTML = `<span class="empty">Not provided.</span>`
+    } else {
+      el.textContent = text
+    }
+  }
+
+  // ── Modal ────────────────────────────────────────────────────────────────────
+  const modalOverlay = $('modal-overlay')
+  const modalImg = $('modal-img')
+  function openModal(src) { modalImg.src = src; modalOverlay.classList.add('open') }
+  function closeModal() { modalOverlay.classList.remove('open') }
+  modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) closeModal() })
+  $('modal-close').addEventListener('click', closeModal)
+
+  $('current-expand').addEventListener('click', () => { const s = $('current-img').src; if (s) openModal(s) })
+  $('fixed-expand').addEventListener('click',   () => { const s = $('fixed-img').src;   if (s) openModal(s) })
+
+  // ADO stack images use zoom-in cursor — modal handled inline per-image above
+
+  // ── Done ─────────────────────────────────────────────────────────────────────
+  function showDone(total) {
+    const done = $('done-screen')
+    done.classList.add('visible')
+    done.innerHTML = `
+      <div class="done-icon">✓</div>
+      <div class="done-title">All ${total} bugs reviewed</div>
+      <div class="done-sub">Results written — closing…</div>
+    `
+    setTimeout(() => window.close(), 1000)
+  }
+</script>
+</body>
+</html>

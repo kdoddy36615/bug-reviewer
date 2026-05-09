@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--output-dir", "./.playwright-output"]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "figma-server": {
+      "command": "./figma-mcp-server/venv/bin/python3",
+      "args": ["./figma-mcp-server/server.py"],
+      "env": {
+        "FIGMA_API_KEY": "${FIGMA_API_KEY}",
+        "FIGMA_DEFAULT_FILE_KEY": "${FIGMA_DEFAULT_FILE_KEY}"
+      }
+    }
+  }
+}
