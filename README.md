@@ -6,7 +6,7 @@
 
 ![Bug Reviewer UI — before/after screenshots and code diff side-by-side](./docs/reviewer-ui.png)
 
-> **Try it without setup:** `git clone` this repo, `npm install`, `npm run demo`. The reviewer UI opens in your browser with a sample bug — no Azure DevOps, Storyblok, or target codebase required.
+> **Try it without setup:** `git clone` this repo, `npm install`, `npm run demo`. The reviewer UI opens in your browser with a hand-crafted sample bug. *This previews the UI only — there is no agent loop, no Claude calls, and no external integrations. To run the full workflow you need Claude Code + an issue tracker + a target codebase, configured per the Quickstart below.*
 
 ---
 
@@ -82,7 +82,7 @@ In Claude Code, type:
 ### Manual commands (if you want to run pieces directly)
 
 ```bash
-npm run demo                            # launch the UI with a sample bug (no integrations needed)
+npm run demo                            # preview the UI with a sample bug (no agent, no integrations)
 node server.js bugs.json results.json   # launch reviewer UI on :3737 with your own bugs
 node capture.js config.json out.json    # capture before/after for one bug
 ```
