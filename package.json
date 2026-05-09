@@ -4,7 +4,8 @@
   "description": "Human-in-the-loop bug review tool",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "demo": "node demo/run.js"
   },
   "dependencies": {
     "express": "^4.18.0",

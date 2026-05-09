@@ -6,6 +6,7 @@ node_modules/
 bugs.json
 results.json
 /tmp/*.json
+demo/.cache/
 
 # Logs
 *.log

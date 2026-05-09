@@ -59,5 +59,6 @@ server.listen(PORT, () => {
   const url = `http://localhost:${PORT}`
   console.log(`Bug Reviewer → ${url}`)
   console.log(`Reviewing ${bugs.length} bug${bugs.length === 1 ? '' : 's'}`)
-  exec(`open ${url}`)
+  const opener = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start ""' : 'xdg-open'
+  exec(`${opener} ${url}`)
 })
