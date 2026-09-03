@@ -1,4 +1,4 @@
-> *Originally built at PPL Electric and used in production to fix CMS-driven UI bugs in a Next.js + Storyblok app. Read the [case study](LINK_TO_CASE_STUDY_PLACEHOLDER) for the story behind it.*
+> *Built for a regulated-utility client and used in production to fix CMS-driven UI bugs in a Next.js + Storyblok app. Read the [case study](LINK_TO_CASE_STUDY_PLACEHOLDER) for the story behind it.*
 
 # Bug Reviewer
 
@@ -143,7 +143,7 @@ The current version breaks the playbook into eight scoped skills. Each skill loa
 
 ## Origin
 
-This pattern emerged from a specific need at PPL Electric: a steady stream of small visual bugs in a Next.js + Storyblok app, slow to triage manually, but each one easy enough that an LLM could handle it — IF a human approved every change before it shipped. The reviewer-as-gate idea is the heart of the tool. The skills + integrations are details that adapt to your stack.
+This pattern emerged from a specific need on a regulated-utility project: a steady stream of small visual bugs in a Next.js + Storyblok app, slow to triage manually, but each one easy enough that an LLM could handle it — IF a human approved every change before it shipped. The reviewer-as-gate idea is the heart of the tool. The skills + integrations are details that adapt to your stack.
 
 Read the full case study: [LINK_TO_CASE_STUDY_PLACEHOLDER](LINK_TO_CASE_STUDY_PLACEHOLDER).
 
